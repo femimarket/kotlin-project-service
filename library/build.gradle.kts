@@ -71,7 +71,7 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/femimarket/ProjectService")
+            url = uri("https://maven.pkg.github.com/femimarket/kotlin-project-service")
             credentials {
                 username = providers.gradleProperty("gpr.user").orNull
                     ?: System.getenv("GITHUB_ACTOR")

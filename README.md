@@ -1,220 +1,158 @@
-# ProjectService
+# Kotlin Project Service
 
-A Kotlin Multiplatform library for embedding AI generation metadata (prompts, models, subjects) into media files (PNG, JPEG, MP4) using XMP metadata standards. It provides a unified API for Android, iOS, Linux, and Web platforms, mirroring the behavior of a Swift reference implementation.
+A Kotlin Multiplatform library for embedding AI-generated media metadata (prompt, model, subject) into images and videos using XMP standards. It provides a unified API for Android, iOS, Linux, and Web (JS/Wasm) platforms, mirroring the behavior of the original Swift implementation.
 
 ## Overview
 
-`ProjectService` acts as a local file storage boundary. It allows applications to save binary data (images, videos, audio) to a private storage directory while embedding structured metadata directly into the file containers. This ensures that AI-generated content carries its provenance (prompt, model used, subject tags) with it, even when shared outside the app.
+`ProjectService` acts as a local file storage boundary. It handles:
+- **Metadata Embedding**: Injects XMP metadata into PNG, JPEG, and MP4 files.
+- **Metadata Extraction**: Reads embedded metadata back from files.
+- **File Management**: Stores files in app-private storage (Android) or OPFS (Web).
+- **State Management**: Manages in-memory state for operations like "Character Cast" and "Image Edit".
 
-### Key Features
-- **Cross-Platform**: Supports Android, iOS (arm64/simulator), Linux, JavaScript, and WebAssembly.
-- **XMP Metadata Embedding**: Embeds metadata into PNG (`iTXt`), JPEG (`APP1`), and MP4 (`uuid` box) containers.
-- **Standard Fields**: Maps logical fields to standard XMP namespaces:
-  - `prompt` → `dc:description` and `Iptc4xmpExt:AIPromptInformation`
-  - `model` → `xmp:CreatorTool` and `Iptc4xmpExt:AISystemUsed`
-  - `subject` → `dc:subject` (Bag)
-  - `like` → `xmp:Rating`
-- **Audio Handling**: Manages a single "current" audio file in storage, replacing previous audio files automatically.
-- **In-Memory State**: Stores temporary operation arguments (character casts, image edit targets) in memory.
-- **Web Support**: Uses `project-service` npm package for browser environments, leveraging the Origin Private File System (OPFS).
+### Supported Formats & Metadata Mapping
 
-## Architecture
+The library embeds metadata into the native container formats using the Adobe XMP standard:
 
-The project consists of two main modules:
+| Format | Container Mechanism | Metadata Fields |
+| :--- | :--- | :--- |
+| **PNG** | `iTXt` chunk (`XML:com.adobe.xmp`) | `dc:description`, `Iptc4xmpExt:AIPromptInformation` |
+| **JPEG** | `APP1` segment (`http://ns.adobe.com/xap/1.0/`) | `xmp:CreatorTool`, `Iptc4xmpExt:AISystemUsed` |
+| **MP4** | Top-level `uuid` box (`BE7ACFCB...`) | `dc:subject`, `xmp:Rating` |
 
-1.  **`:library`**: The core multiplatform library.
-    -   `src/androidMain/`: Android-specific implementation using Adobe XMP Core.
-    -   `src/webMain/`: JavaScript/Wasm binding to the `project-service` npm package.
-    -   `src/commonMain/`: Shared interfaces (if any, currently minimal as Android/Web are the primary implementations shown).
-2.  **`:demo`**: An Android application that consumes the library to demonstrate usage and run instrumented tests.
-
-### Metadata Muxing Strategy
-The library handles binary container formats by extracting existing XMP packets, modifying them, and re-injecting them.
--   **PNG**: Looks for `iTXt` chunks with keyword `XML:com.adobe.xmp`.
--   **JPEG**: Looks for `APP1` segments starting with `http://ns.adobe.com/xap/1.0/ `.
--   **MP4**: Looks for top-level `uuid` boxes with UUID `BE7ACFCB97A942E89C71999491E3AFAC`.
+**Field Mapping Details:**
+- **Prompt**: Stored in `Iptc4xmpExt:AIPromptInformation` (primary) and `dc:description[x-default]` (fallback).
+- **Model**: Stored in `Iptc4xmpExt:AISystemUsed` (primary) and `xmp:CreatorTool` (fallback).
+- **Subject**: Stored in `dc:subject` (Bag).
+- **Like/Rating**: Stored in `xmp:Rating` (5 = Liked, 0 = Not Liked).
 
 ## Installation
 
 ### Gradle Setup
 
-Add the Maven repository to your `settings.gradle.kts` or `build.gradle.kts`:
-
-```kotlin
-dependencyResolutionManagement {
-    repositories {
-        maven {
-            url = uri("https://maven.pkg.github.com/femimarket/ProjectService")
-            credentials {
-                username = providers.gradleProperty("gpr.user").orNull
-                    ?: System.getenv("GITHUB_ACTOR")
-                password = providers.gradleProperty("gpr.key").orNull
-                    ?: System.getenv("GITHUB_TOKEN")
-            }
-        }
-    }
-}
-```
-
-Add the dependency to your module's `build.gradle.kts`:
+Add the library to your `build.gradle.kts` (or `build.gradle`) dependencies. Ensure you have the Maven repository configured if publishing locally, or use the GitHub Packages repository.
 
 ```kotlin
 dependencies {
-    implementation("io.github.femimarket:project-service:1.0.0") // Use appropriate version
+    implementation("io.github.femimarket:project-service:<version>")
 }
 ```
 
-For Android, ensure you have the Adobe XMP Core dependency (usually pulled transitively or added explicitly if needed):
-```kotlin
-implementation(libs.adobe.xmpcore)
-```
+**Note for Android:**
+The library depends on `com.adobe.xmpcore`. Ensure your project allows this dependency.
+
+**Note for Web:**
+The Web target (`js` and `wasmJs`) depends on an external npm package `project-service`. Ensure your build environment can resolve npm dependencies.
 
 ## Usage
 
 ### Android
 
-1.  **Initialize**: Call `ProjectService.init()` with your application context. This should be done once, typically in `Application.onCreate()`.
-2.  **Save Files**: Use `saveFile()` to write data with optional metadata.
-3.  **Retrieve Data**: Use getter methods like `getPrompt()`, `getModel()`, `getSubject()`, and `getLike()`.
+1. **Initialize**: Call `ProjectService.init()` with your Application Context before using any other methods.
+2. **Save Files**: Use `saveFile()` to write bytes with optional metadata.
+3. **Read Metadata**: Use `getPrompt()`, `getModel()`, `getSubject()`, etc.
 
 ```kotlin
 import market.femi.ProjectService
 
-// Initialization
+// In Application.onCreate()
 ProjectService.init(applicationContext)
 
 // Save an image with metadata
-val imageData = ... // ByteArray
+val imageBytes = ... // your byte array
 ProjectService.saveFile(
-    data = imageData,
-    named = "generated_image.png",
+    data = imageBytes,
+    named = "generated.png",
     prompt = "A futuristic city",
     model = "dalle-3",
-    subject = listOf("city", "future", "neon")
+    subject = listOf("city", "future")
 )
 
-// Retrieve metadata
-val prompt = ProjectService.getPrompt("generated_image.png") // "A futuristic city"
-val isLiked = ProjectService.getLike("generated_image.png")  // false
-
-// Like an image
-ProjectService.like("generated_image.png", liked = true)
+// Read metadata back
+val prompt = ProjectService.getPrompt("generated.png") // "A futuristic city"
 ```
 
-### Web (JavaScript/Wasm)
+### iOS
 
-The web implementation relies on the `project-service` npm package. Ensure it is installed in your web project.
+The iOS implementation mirrors the Android API. Initialize with the documents directory context.
 
-```javascript
-import { ProjectService } from 'project-service';
+### Web (JS/Wasm)
 
-// Wait for readiness
-await ProjectService.ready();
+The Web API is asynchronous and returns Promises. It uses the Origin Private File System (OPFS).
 
-// Save file
-await ProjectService.saveFile(
-    new Uint8Array(imageData),
-    "generated.png",
-    { prompt: "A futuristic city", model: "dalle-3" }
-);
+```kotlin
+import market.femi.ProjectService
 
-// Get prompt
-const prompt = await ProjectService.getPrompt("generated.png");
+// Initialize
+ProjectService.ready().await()
+
+// Save
+ProjectService.saveFile(
+    data = uint8Array,
+    name = "image.png",
+    prompt = "A cat"
+).await()
+
+// Read
+val prompt = ProjectService.getPrompt("image.png").await()
 ```
 
-## API Reference
+## Architecture
 
-### `ProjectService` Object
+### Project Structure
 
-#### Initialization
--   `init(context: Context)`: Binds the application context. Idempotent.
+- **`library/`**: The core multiplatform library.
+  - `src/commonMain/`: Shared interfaces (if any) and common logic.
+  - `src/androidMain/`: Android-specific implementation using Adobe XMP Core.
+  - `src/iosMain/`: iOS-specific implementation (using Swift/Rust bindings).
+  - `src/webMain/`: Web-specific implementation binding to the `project-service` npm package.
+  - `src/linuxX64/`: Linux-specific implementation.
+- **`demo/`**: An Android application that consumes the library.
+  - `src/main/kotlin/.../MainActivity.kt`: Minimal UI demonstrating initialization.
+  - `src/androidTest/kotlin/.../ProjectServiceInstrumentedTest.kt`: Comprehensive instrumented tests.
 
-#### File Operations
--   `saveFile(data: ByteArray, named: String, prompt: String? = null, model: String? = null, subject: List<String>? = null)`: Saves binary data to the documents directory, embedding XMP metadata if provided.
--   `getAllGenerations(): List<File>`: Lists all files in the app's private storage directory.
--   `getUrl(file: String): File`: Resolves a filename to a `File` object in the documents directory. Strips path traversal attempts.
--   `saveAudio(data: ByteArray, named: String)`: Saves audio data. Deletes any existing audio files in storage before saving.
--   `getAudio(): File?`: Returns the single audio file in storage, or null.
+### Key Files
 
-#### Metadata Retrieval
--   `getPrompt(file: String): String?`: Reads prompt from `Iptc4xmpExt:AIPromptInformation` or `dc:description`.
--   `getModel(file: String): String?`: Reads model from `Iptc4xmpExt:AISystemUsed` or `xmp:CreatorTool`.
--   `getSubject(file: String): List<String>?`: Reads subject keywords from `dc:subject`.
--   `getLike(file: String): Boolean`: Returns true if `xmp:Rating` is between 1 and 5.
--   `like(file: String, liked: Boolean)`: Sets `xmp:Rating` to 5 (liked) or 0 (not liked).
+- **`library/src/androidMain/kotlin/market/femi/ProjectService.kt`**: The main entry point for Android. Handles file I/O, path traversal protection, and delegates metadata operations to `XmpMetadata`.
+- **`library/src/androidMain/kotlin/market/femi/XmpMetadata.kt`**: Low-level XMP packet manipulation. Handles extraction and injection of XMP data into PNG, JPEG, and MP4 containers.
+- **`library/src/webMain/kotlin/market/femi/ProjectService.kt`**: Kotlin/JS/Wasm external binding to the `project-service` npm module.
 
-#### In-Memory State (Process-Lifetime)
--   `setCharacterCast(a: String, b: String)`: Stores a pair of filenames for character-cast operations.
--   `getCharacterCast(): Pair<String, String>?`: Retrieves the stored character-cast pair.
--   `clearCharacterCast()`: Clears the stored character-cast pair.
--   `setImageEdit(file: String)`: Stores a filename for image-edit operations.
--   `getImageEdit(): String?`: Retrieves the stored image-edit filename.
--   `clearImageEdit()`: Clears the stored image-edit filename.
+### Non-Obvious Conventions
+
+1. **Path Traversal Protection**: `ProjectService.getUrl()` strips directory traversal attempts (e.g., `../../../etc/passwd`) to ensure files are always saved within the app's private documents directory.
+2. **Atomic Writes**: Files are written to a temporary file first, then renamed/copied to the final destination to prevent corruption.
+3. **Audio Handling**: `saveAudio()` deletes any existing audio files in storage before saving the new one. It identifies audio files by extension (mp3, m4a, wav, etc.).
+4. **In-Memory State**: `setCharacterCast()` and `setImageEdit()` store state in memory only. This state is lost if the process restarts.
+5. **Metadata Fallbacks**: When reading metadata, the library checks specific XMP fields first (e.g., `Iptc4xmpExt:AIPromptInformation`) and falls back to standard fields (e.g., `dc:description`) if the primary field is absent.
 
 ## Building and Testing
 
-### Prerequisites
--   JDK 11 or higher
--   Android SDK (API 21+ for minSdk, API 34+ for compileSdk)
--   Gradle 8+
-
-### Build Commands
+### Build
 
 ```bash
-# Build the library
 ./gradlew :library:assemble
-
-# Build the demo app
-./gradlew :demo:assembleDebug
 ```
 
-### Running Tests
+### Run Demo
 
-#### Unit Tests (JVM)
-Run common and JVM-specific unit tests:
 ```bash
-./gradlew :library:jvmTest
-```
-
-#### Android Instrumented Tests
-Run tests on a connected Android device or emulator:
-```bash
+./gradlew :demo:installDebug
 ./gradlew :demo:connectedAndroidTest
 ```
-The instrumented tests in `demo/src/androidTest/kotlin/market/femi/demo/ProjectServiceInstrumentedTest.kt` verify the library's behavior exactly as a downstream consumer would experience it, including XMP embedding and retrieval.
 
-## Project Structure
+### Run Unit Tests
 
-```
-.
-├── build.gradle.kts          # Root build configuration
-├── settings.gradle.kts       # Project settings and plugin management
-├── library/                  # Multiplatform library module
-│   ├── build.gradle.kts      # Library build config (MPP, publishing)
-│   └── src/
-│       ├── androidMain/
-│       │   └── kotlin/market/femi/
-│       │       ├── ProjectService.kt  # Android implementation
-│       │       └── XmpMetadata.kt     # XMP embedding logic
-│       └── webMain/
-│           └── kotlin/market/femi/
-│               └── ProjectService.kt  # JS/Wasm binding
-└── demo/                     # Android demo app
-    ├── build.gradle.kts      # Demo app config
-    └── src/
-        ├── androidTest/
-        │   └── kotlin/market/femi/demo/
-        │       └── ProjectServiceInstrumentedTest.kt # Instrumented tests
-        └── main/
-            └── kotlin/market/femi/demo/
-                └── MainActivity.kt # Minimal host activity
+```bash
+./gradlew :library:jvmTest
+./gradlew :library:iosSimulatorArm64Test
 ```
 
-## Non-Obvious Conventions
+### Publish
 
-1.  **Storage Location**: On Android, files are stored in `Context.getFilesDir()`, which is the app's private internal storage directory. This is the analog of iOS's `Documents/` directory.
-2.  **Path Traversal Protection**: `getUrl()` automatically strips directory traversal sequences (e.g., `../../../etc/passwd`) to prevent writing files outside the documents directory.
-3.  **Atomic Writes**: Files are written to a temporary file first, then renamed to the target name to ensure atomicity and prevent corruption.
-4.  **Audio Exclusivity**: The library assumes only one audio file exists at a time. Saving a new audio file deletes all existing audio files.
-5.  **XMP Namespace Registration**: The `Iptc4xmpExt` namespace is registered dynamically in the `XmpMetadata` init block to ensure compatibility with the Adobe XMP Core library.
-6.  **Web Dependencies**: The web implementation depends on an external npm package (`project-service`). Ensure this package is available in your web project's dependencies.
+To publish to GitHub Packages:
+
+```bash
+./gradlew publish -Pgpr.user=YOUR_USERNAME -Pgpr.key=YOUR_TOKEN
+```
+
+Or set `gpr.user` and `gpr.key` in `gradle.properties`.

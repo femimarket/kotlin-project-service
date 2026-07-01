@@ -13,7 +13,7 @@ group = "io.github.femimarket"
 version = providers.gradleProperty("libraryVersion").getOrElse("dev")
 
 kotlin {
-    jvm()
+    // Shipping Android + Web only. JVM/iOS/Linux omitted until implemented.
     androidLibrary {
         namespace = "market.femi"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -29,10 +29,6 @@ kotlin {
             jvmTarget = JvmTarget.JVM_11
         }
     }
-    iosArm64()
-    iosSimulatorArm64()
-    linuxX64()
-
     // Web targets (browser). Both the JS/IR and Kotlin/Wasm backends share a
     // single `webMain`/`webTest` source set holding the JsInterop binding.
     js(IR) {

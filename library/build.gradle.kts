@@ -31,7 +31,8 @@ kotlin {
     }
     // Web targets (browser). Both the JS/IR and Kotlin/Wasm backends share a
     // single `webMain`/`webTest` source set holding the JsInterop binding.
-    js(IR) {
+    js {
+        useEsModules() // project-service is a pure-ESM npm package
         browser()
         nodejs()
     }

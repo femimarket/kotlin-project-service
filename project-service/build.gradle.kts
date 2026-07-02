@@ -35,6 +35,7 @@ kotlin {
         useEsModules() // project-service is a pure-ESM npm package
         browser()
         nodejs()
+        
     }
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {

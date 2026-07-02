@@ -32,7 +32,7 @@ kotlin {
 
 dependencies {
     // The demo consumes the library exactly as a downstream app would.
-    implementation(project(":library"))
+    implementation(project(":project-service"))
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

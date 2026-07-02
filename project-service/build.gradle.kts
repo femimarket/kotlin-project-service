@@ -45,7 +45,6 @@ kotlin {
     sourceSets {
         webMain.dependencies {
             implementation(libs.kotlinx.browser)
-            implementation(npm("project-service", "github:femimarket/js-project-service"))
         }
         commonMain.dependencies {
             //put your multiplatform dependencies here
